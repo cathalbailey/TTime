@@ -1,0 +1,26 @@
+<!doctype html>
+<html>
+  <head>
+    <title>Golf Tee Time Finder</title>
+  </head>
+  <body>
+    <h1>Find Available Tee Times</h1>
+
+    <!-- Input form -->
+    <form method="POST">
+      <label for="time">Enter preferred time (HH:MM):</label>
+      <input type="time" id="time" name="time" required>
+      <button type="submit">Search</button>
+    </form>
+
+    <!-- Results -->
+    {% if results %}
+      <h2>Available Clubs:</h2>
+      <ul>
+        {% for club, time in results %}
+          <li>{{ club }} — {{ time }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  </body>
+</html>
