@@ -3,7 +3,7 @@ import requests
 
 app = Flask(__name__)
 
-GOOGLE_API_KEY = "AIzaSyAz94NaVkTxKwtI2DMSLVBgWfPmL54VWko"
+GOOGLE_API_KEY = "INSERT_HERE"
 
 @app.route("/", methods=["GET", "POST"])
 def home():
