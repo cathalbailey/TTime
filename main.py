@@ -1,24 +1,59 @@
 from flask import Flask, render_template, request
+import requests
 
 app = Flask(__name__)
 
-# Mock data (you’ll replace this with real API/database later)
-clubs = {
-    "Dublin Golf Club": ["08:00", "10:00", "13:30"],
-    "Phoenix Park Golf": ["09:15", "11:00", "14:00"],
-    "Clontarf Golf": ["07:30", "12:00", "15:45"]
-}
+GOOGLE_API_KEY = "AIzaSyAz94NaVkTxKwtI2DMSLVBgWfPmL54VWko"
 
 @app.route("/", methods=["GET", "POST"])
 def home():
     results = []
+    user_lat = None
+    user_lng = None
+    radius_km = 20  # default radius
+
     if request.method == "POST":
+        user_lat = request.form.get("lat")
+        user_lng = request.form.get("lng")
         preferred_time = request.form.get("time")
-        for club, times in clubs.items():
-            for t in times:
-                if preferred_time <= t:  # simple filter
-                    results.append((club, t))
-    return render_template("index.html", results=results)
+        date = request.form.get("date")
+        radius_km = request.form.get("radius") or 20
+
+        if user_lat and user_lng:
+            user_lat = float(user_lat)
+            user_lng = float(user_lng)
+
+            # Google Places Nearby Search
+            endpoint = "https://maps.googleapis.com/maps/api/place/nearbysearch/json"
+            params = {
+                "location": f"{user_lat},{user_lng}",
+                "radius": int(radius_km) * 1000,
+                "type": "golf_course",
+                "keyword": "golf",
+                "key": GOOGLE_API_KEY
+            }
+
+            response = requests.get(endpoint, params=params).json()
+            print(response)
+
+            for place in response.get("results", []):
+                place_types = place.get("types", [])
+                name = place.get("name", "").lower()
+                if "golf" in name or "golf_course" in place_types:
+                    results.append({
+                        "club": place["name"],
+                        "lat": place["geometry"]["location"]["lat"],
+                        "lng": place["geometry"]["location"]["lng"]
+                    })
+
+    return render_template(
+        "index.html",
+        results=results,
+        user_lat=user_lat,
+        user_lng=user_lng,
+        radius_km=radius_km,
+        today=request.form.get("date")
+    )
 
 if __name__ == "__main__":
     app.run(debug=True)
