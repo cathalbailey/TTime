@@ -1,26 +1,210 @@
 <!doctype html>
 <html>
-  <head>
+<head>
     <title>Golf Tee Time Finder</title>
-  </head>
-  <body>
-    <h1>Find Available Tee Times</h1>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka+One&family=Baloo+2:wght@500&display=swap" rel="stylesheet">
 
-    <!-- Input form -->
-    <form method="POST">
-      <label for="time">Enter preferred time (HH:MM):</label>
-      <input type="time" id="time" name="time" required>
-      <button type="submit">Search</button>
-    </form>
+    <!-- Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" />
 
-    <!-- Results -->
-    {% if results %}
-      <h2>Available Clubs:</h2>
-      <ul>
-        {% for club, time in results %}
-          <li>{{ club }} — {{ time }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
-  </body>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #f2f7f9;
+            color: #333;
+            margin: 0;
+            padding: 0 20px;
+        }
+
+        h1 { font-family: 'Fredoka One', cursive; color: #0d6efd; text-align: center; margin-top: 20px; }
+        .subheading { font-family: 'Baloo 2', cursive; font-size: 1.2rem; font-weight: 500; color: #555; text-align: center; margin-top: 5px; margin-bottom: 10px; }
+        .subsubheading { font-family: 'Baloo 2', cursive; font-size: 1.0rem; font-weight: 400; color: #555; text-align: center; margin-top: 5px; margin-bottom: 20px; }
+
+        form {
+            background-color: #ffffff;
+            padding: 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            max-width: 600px;
+            margin: 20px auto;
+        }
+
+        label { display: block; margin-top: 10px; font-weight: bold; color: #0d6efd; }
+        select, input[type="date"], input[type="number"], input[type="range"], button, input[type="text"] {
+            width: 100%; padding: 10px; margin-top: 5px; border-radius: 6px; border: 1px solid #ccc; box-sizing: border-box;
+        }
+        button { background-color: #0d6efd; color: white; font-weight: bold; border: none; cursor: pointer; margin-top: 15px; }
+        button:hover { background-color: #0056b3; }
+
+        #map { height: 500px; border-radius: 12px; margin: 20px auto; max-width: 800px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+
+        ul { list-style: none; padding: 0; }
+        li { background-color: #ffffff; margin: 10px 0; padding: 10px; border-left: 5px solid #0d6efd; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+
+        h2 { color: #0d6efd; text-align: center; margin-top: 20px; }
+        #radiusSlider { margin-top: 5px; }
+        #radiusValue { font-weight: bold; color: #0d6efd; margin-left: 10px; }
+
+        /* Additional styling for Flatpickr inputs inside the form */
+        .flatpickr-input {
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+<h1>T Time!</h1>
+<h2 class="subheading">Search for available golf tee times near you</h2>
+<h3 class="subsubheading">By Cathal Bailey</h3>
+
+<form method="POST" id="searchForm">
+
+    <!-- Date Picker with Flatpickr -->
+    <label for="datePicker">Select date:</label>
+    <input type="text" id="datePicker" name="date" placeholder="Choose a date" required>
+
+    <!-- Time Picker with Flatpickr -->
+    <label for="timePicker">Preferred time:</label>
+    <input type="text" id="timePicker" name="time" placeholder="Choose a time" required>
+
+    <input type="hidden" id="lat" name="lat">
+    <input type="hidden" id="lng" name="lng">
+    <input type="hidden" id="radius" name="radius">
+
+    <label for="radiusSlider">Radius (km): <span id="radiusValue">5</span></label>
+    <input type="range" id="radiusSlider" min="1" max="20" value="5">
+
+    <button type="submit">Search</button>
+</form>
+
+<div id="map"></div>
+
+{% if results %}
+  <h2>Nearby Golf Courses</h2>
+  <ul style="list-style:none; padding:0;">
+    {% for course in results %}
+      <li style="margin-bottom:15px; padding:10px; border:1px solid #ddd; border-radius:6px;">
+        <strong>{{ course.club }}</strong><br>
+        {% if course.vicinity %}
+          📍 {{ course.vicinity }}<br>
+        {% endif %}
+        {% if course.rating %}
+          ⭐ {{ course.rating }}
+        {% else %}
+          ⭐ No rating available
+        {% endif %}
+      </li>
+    {% endfor %}
+  </ul>
+{% else %}
+  <p>No golf courses found in this area.</p>
+{% endif %}
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<!-- Flatpickr JS -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+
+<script>
+var map = L.map('map').setView([53.334, -6.267], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap contributors'
+}).addTo(map);
+
+var userMarker;
+var radiusCircle;
+
+// Radius slider
+var radiusSlider = document.getElementById('radiusSlider');
+var radiusValue = document.getElementById('radiusValue');
+var radiusInput = document.getElementById('radius');
+radiusSlider.addEventListener('input', function() {
+    radiusValue.textContent = radiusSlider.value;
+    radiusInput.value = radiusSlider.value;
+    if (radiusCircle) { radiusCircle.setRadius(radiusSlider.value * 1000); }
+});
+
+// Click map to set location
+map.on('click', function(e) {
+    var lat = e.latlng.lat;
+    var lng = e.latlng.lng;
+
+    document.getElementById('lat').value = lat;
+    document.getElementById('lng').value = lng;
+
+    if (userMarker) map.removeLayer(userMarker);
+    userMarker = L.marker([lat, lng]).addTo(map).bindPopup("Your Location").openPopup();
+
+    if (radiusCircle) map.removeLayer(radiusCircle);
+    radiusCircle = L.circle([lat, lng], {
+        color: 'blue',
+        fillColor: '#0000ff',
+        fillOpacity: 0.2,
+        radius: radiusSlider.value * 1000
+    }).addTo(map);
+});
+
+// Show previously submitted location & radius
+{% if user_lat and user_lng %}
+userMarker = L.marker([{{ user_lat }}, {{ user_lng }}]).addTo(map)
+    .bindPopup("Your Location").openPopup();
+radiusCircle = L.circle([{{ user_lat }}, {{ user_lng }}], {
+    color: 'blue',
+    fillColor: '#0000ff',
+    fillOpacity: 0.2,
+    radius: {{ radius_km }} * 1000
+}).addTo(map);
+map.setView([{{ user_lat }}, {{ user_lng }}], 12);
+radiusSlider.value = {{ radius_km }};
+radiusValue.textContent = {{ radius_km }};
+radiusInput.value = {{ radius_km }};
+{% endif %}
+
+// Add markers for results
+{% for item in results %}
+L.marker([{{ item.lat }}, {{ item.lng }}]).addTo(map)
+  .bindPopup("{{ item.club }}");
+{% endfor %}
+
+// 🔹 Auto-detect user location on page load
+window.onload = function() {
+    if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function(position) {
+            var lat = position.coords.latitude;
+            var lng = position.coords.longitude;
+
+            document.getElementById('lat').value = lat;
+            document.getElementById('lng').value = lng;
+
+            if (userMarker) map.removeLayer(userMarker);
+            userMarker = L.marker([lat, lng]).addTo(map).bindPopup("Your Location").openPopup();
+
+            if (radiusCircle) map.removeLayer(radiusCircle);
+            radiusCircle = L.circle([lat, lng], {
+                color: 'blue',
+                fillColor: '#0000ff',
+                fillOpacity: 0.2,
+                radius: radiusSlider.value * 1000
+            }).addTo(map);
+
+            map.setView([lat, lng], 12);
+        });
+    }
+};
+
+// Initialize Flatpickr date picker
+flatpickr("#datePicker", {
+  dateFormat: "Y-m-d",
+  minDate: "today",
+});
+
+// Initialize Flatpickr time picker
+flatpickr("#timePicker", {
+  enableTime: true,
+  noCalendar: true,
+  dateFormat: "H:i",
+  time_24hr: true,
+});
+</script>
+</body>
 </html>
